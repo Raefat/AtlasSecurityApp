@@ -1,7 +1,10 @@
-<IfModule mod_rewrite.c>
-    RewriteEngine On
-    RewriteBase /public/
-    RewriteCond %{REQUEST_FILENAME} !-f
-    RewriteCond %{REQUEST_FILENAME} !-d
-    RewriteRule ^ index.php [L,QSA]
-</IfModule>
+RewriteEngine On
+
+# If file exists, do not rewrite
+RewriteCond %{REQUEST_FILENAME} !-f
+
+# If directory exists, do not rewrite
+RewriteCond %{REQUEST_FILENAME} !-d
+
+# Send everything to index.php
+RewriteRule ^(.*)$ index.php [L,QSA]
