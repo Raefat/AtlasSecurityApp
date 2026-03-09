@@ -32,7 +32,7 @@
     <nav class="fixed top-0 left-0 right-0 z-50 bg-sky-100/95 border-b border-sky-200/50 shadow-sm">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex items-center h-[72px] gap-6">
-                <a href="<?= base_url() ?>" class="text-[1.5rem] font-bold text-blue-500 tracking-tight uppercase flex-shrink-0">AtlasTech Solutions</a>
+                <a href="<?= base_url() ?>" class="text-[1.5rem] font-bold text-red-500 tracking-tight uppercase flex-shrink-0">AtlasTech Solutions</a>
                 <div class="hidden md:flex items-center justify-end gap-5 flex-shrink-0 flex-1 min-w-0">
                     <a href="<?= base_url('') ?>" class="text-[13px] font-normal text-black hover:text-gray-800 uppercase tracking-[0.02em] transition">Home</a>
                     <a href="<?= base_url('services') ?>" class="text-[13px] font-normal text-black hover:text-gray-800 uppercase tracking-[0.02em] transition">Services</a>
