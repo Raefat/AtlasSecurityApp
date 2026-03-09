@@ -1,0 +1,59 @@
+# =============================================================
+# .github/workflows/deploy.yml
+# CI: PHP lint + tests on every push/PR
+# CD: deploy to /var/www/html on push to main
+# =============================================================
+name: CI / CD
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, xml, curl, zip
+
+      - name: Install Composer deps (if composer.json exists)
+        run: |
+          if [ -f composer.json ]; then
+            composer install --no-dev --optimize-autoloader --quiet
+          fi
+
+      - name: PHP syntax check
+        run: find . -name "*.php" -not -path "./vendor/*" | xargs php -l
+
+      # Uncomment if you use PHPUnit:
+      # - name: Run tests
+      #   run: vendor/bin/phpunit --testdox
+
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host:     ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key:      ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            git --work-tree=/var/www/html --git-dir=/var/repo/myapp checkout -f main
+            chown -R www-data:www-data /var/www/html
+            apachectl graceful
+            echo "✅ Deployed $(git --git-dir=/var/repo/myapp rev-parse --short HEAD)"
