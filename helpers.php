@@ -165,3 +165,154 @@ if (!function_exists('config')) {
         return $v;
     }
 }
+
+// -----------------------------------------------------------------------------
+// CSRF helpers
+// -----------------------------------------------------------------------------
+
+if (!function_exists('get_csrf_token')) {
+    /**
+     * Return a CSRF token stored in session, generating a new one if necessary.
+     */
+    function get_csrf_token(): string
+    {
+        if (empty($_SESSION['_csrf_token'])) {
+            // 32 bytes -> 64 hex chars
+            $_SESSION['_csrf_token'] = bin2hex(random_bytes(32));
+        }
+        return $_SESSION['_csrf_token'];
+    }
+}
+
+if (!function_exists('csrf_field')) {
+    /**
+     * Output a hidden input containing the session CSRF token.
+     */
+    function csrf_field(): string
+    {
+        $token = get_csrf_token();
+        return '<input type="hidden" name="_csrf" value="' . htmlspecialchars($token, ENT_QUOTES, 'UTF-8') . '">';
+    }
+}
+
+if (!function_exists('verify_csrf_token')) {
+    /**
+     * Verify that the provided token matches the one in session.
+     *
+     * @param string|null $token
+     * @param bool $regenerate  Whether to regenerate the token after a successful check.
+     * @throws \Exception on mismatch (terminates request with 403).
+     */
+    function verify_csrf_token(?string $token, bool $regenerate = true): void
+    {
+        $valid = is_string($token) && hash_equals(get_csrf_token(), $token);
+        if (! $valid) {
+            http_response_code(403);
+            // you could render a friendly HTML page here if desired
+            die('Invalid CSRF token');
+        }
+        if ($regenerate) {
+            // generate a fresh token for the next form
+            $_SESSION['_csrf_token'] = bin2hex(random_bytes(32));
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Google reCAPTCHA v3 helpers
+// -----------------------------------------------------------------------------
+
+if (!function_exists('recaptcha_enabled')) {
+    function recaptcha_enabled(): bool
+    {
+        $site = $GLOBALS['config']['recaptcha']['site_key'] ?? '';
+        $secret = $GLOBALS['config']['recaptcha']['secret_key'] ?? '';
+        return $site !== '' && $secret !== '';
+    }
+}
+
+if (!function_exists('recaptcha_site_key')) {
+    function recaptcha_site_key(): string
+    {
+        return $GLOBALS['config']['recaptcha']['site_key'] ?? '';
+    }
+}
+
+if (!function_exists('recaptcha_script')) {
+    function recaptcha_script(): string
+    {
+        $key = recaptcha_site_key();
+        if ($key === '') {
+            return '';
+        }
+        return '<script src="https://www.google.com/recaptcha/api.js?render=' . htmlspecialchars($key, ENT_QUOTES, 'UTF-8') . '" async defer></script>';
+    }
+}
+
+if (!function_exists('recaptcha_field')) {
+    function recaptcha_field(): string
+    {
+        // simple hidden input; value is populated by JS
+        return '<input type="hidden" name="g-recaptcha-response">';
+    }
+}
+
+if (!function_exists('recaptcha_verify')) {
+    /**
+     * Send token to Google and check result.
+     * Returns array containing at least ['success' => bool, 'score' => float|null].
+     */
+    function recaptcha_verify(string $token): array
+    {
+        $secret = $GLOBALS['config']['recaptcha']['secret_key'] ?? '';
+        $minScore = $GLOBALS['config']['recaptcha']['min_score'] ?? 0.5;
+        $result = ['success' => false, 'score' => null];
+
+        if ($secret === '' || $token === '') {
+            return $result;
+        }
+
+        $url = 'https://www.google.com/recaptcha/api/siteverify';
+        $data = http_build_query([
+            'secret' => $secret,
+            'response' => $token,
+        ]);
+        $opts = [
+            'http' => [
+                'method'  => 'POST',
+                'header'  => "Content-type: application/x-www-form-urlencoded\r\n",
+                'content' => $data,
+                'timeout' => 5,
+            ],
+        ];
+        $context  = stream_context_create($opts);
+        $resp = @file_get_contents($url, false, $context);
+        if ($resp === false) {
+            return $result;
+        }
+        $decoded = json_decode($resp, true);
+        if (!is_array($decoded)) {
+            return $result;
+        }
+
+        $result['success'] = !empty($decoded['success']) && (!isset($decoded['score']) || $decoded['score'] >= $minScore);
+        $result['score'] = isset($decoded['score']) ? (float)$decoded['score'] : null;
+        // include raw response for debugging if needed
+        return $result + $decoded;
+    }
+}
+
+if (!function_exists('recaptcha_debug')) {
+    function recaptcha_debug(): array
+    {
+        $enabled = recaptcha_enabled();
+        $site = $GLOBALS['config']['recaptcha']['site_key'] ?? '';
+        return [
+            'enabled' => $enabled,
+            'site_key_set' => $site !== '',
+            'secret_key_set' => ($GLOBALS['config']['recaptcha']['secret_key'] ?? '') !== '',
+            'site_key_preview' => $site === '' ? '' : (substr($site, 0, 6) . '...' . substr($site, -4)),
+            'script_would_load' => $enabled,
+        ];
+    }
+}
