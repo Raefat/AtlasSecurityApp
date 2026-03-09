@@ -54,7 +54,7 @@ jobs:
           key:      ${{ secrets.PROD_SSH_KEY }}
           script: |
             cd /var/www/html
-            git pull origin main
-            chown -R www-data:www-data /var/www/html
-            apachectl graceful
+            sudo git pull origin main
+            sudo chown -R www-data:www-data /var/www/html
+            sudo apachectl graceful
             echo "✅ Deployed successfully"
