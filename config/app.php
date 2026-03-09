@@ -16,6 +16,10 @@ return [
     'session' => [
         'name' => 'webdev_session',
         'lifetime' => 7200,
+        'secure' => true,
+        'httponly' => true,
+        'samesite' => 'Strict',
+        
     ],
 
 
