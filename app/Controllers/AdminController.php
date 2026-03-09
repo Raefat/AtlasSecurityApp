@@ -6,192 +6,416 @@ namespace App\Controllers;
 use App\Core\Controller;
 use App\Core\Request;
 use App\Models\User;
-use App\Models\ServicePack;
-use App\Models\Order;
-use App\Models\Invoice;
-use App\Models\Message;
-use App\Models\AdminNote;
+use App\Models\PasswordResetCode;
+use App\Models\LoginVerificationCode;
 
-class AdminController extends Controller
+class AuthController extends Controller
 {
-    public function index(): void
+    public function showLogin(): void
     {
-        $revenue = Order::totalRevenue();
-        $clients = User::countByRole('client');
-        $activeOrders = Order::countByStatus('in_progress') + Order::countByStatus('pending');
-        $completedOrders = Order::countByStatus('completed');
-        $monthly = Order::monthlyRevenue(6);
-        $recentOrders = array_slice(Order::all(), 0, 5);
-
-        $this->view('admin.index', [
-            'pageTitle' => '',
-            'revenue' => $revenue,
-            'clients' => $clients,
-            'activeOrders' => $activeOrders,
-            'completedOrders' => $completedOrders,
-            'monthly' => $monthly,
-            'recentOrders' => $recentOrders,
-        ]);
+        $this->view('auth.login', ['pageTitle' => 'Login', 'navbar' => true, 'footer' => true]);
     }
 
-    public function packs(): void
+    public function login(Request $request): void
     {
-        $packs = ServicePack::all(false);
-        $this->view('admin.packs', ['pageTitle' => '', 'packs' => $packs]);
-    }
-
-    public function packForm(int $id = 0): void
-    {
-        $pack = $id ? ServicePack::findById($id) : null;
-        $this->view('admin.pack-form', ['pageTitle' => '', 'pack' => $pack]);
-    }
-
-    public function packSave(Request $request, int $id = 0): void
-    {
-        $name = trim((string) $request->input('name'));
-        $slug = trim((string) $request->input('slug'));
-        $description = trim((string) $request->input('description'));
-        $price = (float) $request->input('price');
-        $is_active = (int) $request->input('is_active', 1);
-        $sort_order = (int) $request->input('sort_order', 0);
-        $featuresStr = trim((string) $request->input('features'));
-        $features = array_filter(array_map('trim', explode("\n", $featuresStr)));
-
-        if ($name === '') {
-            $this->redirect(base_url('admin/packs'));
-            return;
-        }
-        if ($slug === '') {
-            $slug = ServicePack::slugify($name);
-        }
-
-        if ($id) {
-            ServicePack::update($id, [
-                'name' => $name,
-                'slug' => $slug,
-                'description' => $description,
-                'price' => $price,
-                'is_active' => $is_active,
-                'sort_order' => $sort_order,
-                'features' => $features,
-            ]);
-        } else {
-            ServicePack::create([
-                'name' => $name,
-                'slug' => $slug,
-                'description' => $description,
-                'price' => $price,
-                'is_active' => $is_active,
-                'sort_order' => $sort_order,
-                'features' => $features,
-            ]);
-        }
-        $this->redirect(base_url('admin/packs'));
-    }
-
-    public function packDelete(int $id): void
-    {
-        ServicePack::delete($id);
-        $this->redirect(base_url('admin/packs'));
-    }
-
-    public function clients(): void
-    {
-        $clients = User::allClients();
-        $this->view('admin.clients', ['pageTitle' => '', 'clients' => $clients]);
-    }
-
-    public function clientDetail(int $id): void
-    {
-        $client = User::findById($id);
-        if (!$client || $client['role'] !== 'client') {
-            $this->redirect(base_url('admin/clients'));
-            return;
-        }
-        $orders = Order::findByUser($id);
-        $notes = AdminNote::getForUser($id);
-        $this->view('admin.client-detail', [
-            'pageTitle' => '',
-            'client' => $client,
-            'orders' => $orders,
-            'notes' => $notes,
-        ]);
-    }
-
-    public function clientUpdateStatus(Request $request, int $id): void
-    {
-        $status = (string) $request->input('status');
-        if (in_array($status, ['lead', 'active', 'vip'], true)) {
-            User::update($id, ['status' => $status]);
-        }
-        $this->redirect(base_url('admin/clients/' . $id));
-    }
-
-    public function clientAddNote(Request $request, int $id): void
-    {
-        $note = trim((string) $request->input('note'));
-        if ($note !== '') {
-            AdminNote::add($id, (int) $_SESSION['user_id'], $note);
-        }
-        $this->redirect(base_url('admin/clients/' . $id));
-    }
-
-    public function orders(): void
-    {
-        $orders = Order::all();
-        $this->view('admin.orders', ['pageTitle' => '', 'orders' => $orders]);
-    }
-
-    public function orderDetail(int $id): void
-    {
-        $order = Order::findByIdWithClient($id);
-        if (!$order) {
-            $this->redirect(base_url('admin/orders'));
-            return;
-        }
-        $invoices = Invoice::findByOrder($id);
-        $this->view('admin.order-detail', [
-            'pageTitle' => '',
-            'order' => $order,
-            'invoices' => $invoices,
-        ]);
-    }
-
-    public function orderUpdate(Request $request, int $id): void
-    {
-        $data = [];
-        if ($request->has('status')) {
-            $data['status'] = $request->input('status');
-        }
-        if ($request->has('deadline')) {
-            $data['deadline'] = $request->input('deadline') ?: null;
-        }
-        if ($request->has('notes')) {
-            $data['notes'] = $request->input('notes');
-        }
-
-        $file = $request->file('deliverables_file');
-        if ($file && $file['error'] === UPLOAD_ERR_OK && is_uploaded_file($file['tmp_name'])) {
-            $dir = ROOT_PATH . '/storage/uploads';
-            if (!is_dir($dir)) {
-                mkdir($dir, 0755, true);
-            }
-            $ext = pathinfo($file['name'], PATHINFO_EXTENSION) ?: 'zip';
-            $name = 'delivery_' . $id . '_' . time() . '.' . $ext;
-            if (move_uploaded_file($file['tmp_name'], $dir . '/' . $name)) {
-                $data['deliverables_file'] = $name;
+        $errors = [];
+        if (recaptcha_enabled()) {
+            $token = (string) $request->input('g-recaptcha-response');
+            $result = recaptcha_verify($token);
+            if (!$result['success']) {
+                $errors['recaptcha'] = 'Security check failed. Please try again.';
+                $this->view('auth.login', [
+                    'pageTitle' => 'Login',
+                    'navbar' => true,
+                    'footer' => true,
+                    'errors' => $errors,
+                    'old' => ['email' => (string) $request->input('email')],
+                ]);
+                return;
             }
         }
 
-        if (!empty($data)) {
-            Order::update($id, $data);
+        $email = trim((string) $request->input('email'));
+        $password = (string) $request->input('password');
+
+        // Simple rate limiting: block after 5 failed attempts for 15 minutes per email+IP
+        $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+        $key = strtolower($email) . '|' . $ip;
+        $attempts = $_SESSION['login_attempts'][$key] ?? ['count' => 0, 'blocked_until' => 0];
+        $now = time();
+        if ($attempts['blocked_until'] > $now) {
+            $errors['email'] = 'Too many login attempts. Please try again later.';
+            $this->view('auth.login', [
+                'pageTitle' => 'Login',
+                'navbar' => true,
+                'footer' => true,
+                'errors' => $errors,
+                'old' => ['email' => $email],
+            ]);
+            return;
         }
-        $this->redirect(base_url('admin/orders/' . $id));
+
+        if ($email === '') {
+            $errors['email'] = 'Email is required.';
+        }
+        if ($password === '') {
+            $errors['password'] = 'Password is required.';
+        }
+
+        if (!empty($errors)) {
+            $this->view('auth.login', [
+                'pageTitle' => 'Login',
+                'navbar' => true,
+                'footer' => true,
+                'errors' => $errors,
+                'old' => ['email' => $email],
+            ]);
+            return;
+        }
+
+        $user = User::findByEmail($email);
+        if (!$user || !password_verify($password, $user['password'])) {
+            $attempts['count']++;
+            if ($attempts['count'] >= 5) {
+                $attempts['blocked_until'] = $now + 900; // 15 minutes
+                error_log(sprintf('Suspicious login activity for %s from IP %s', $email, $ip));
+            }
+            $_SESSION['login_attempts'][$key] = $attempts;
+            $errors['email'] = 'Invalid email or password.';
+            $this->view('auth.login', [
+                'pageTitle' => 'Login',
+                'navbar' => true,
+                'footer' => true,
+                'errors' => $errors,
+                'old' => ['email' => $email],
+            ]);
+            return;
+        }
+
+        // Successful password check: reset attempts
+        unset($_SESSION['login_attempts'][$key]);
+
+        // MFA: send 6-digit code by email, then require verification
+        $code = LoginVerificationCode::create($email, 10);
+        send_login_verification_email($email, $code);
+        $_SESSION['mfa_pending_email'] = $email;
+        $this->redirect(base_url('login/verify'));
     }
 
-    public function messages(): void
+    public function showLoginVerify(): void
     {
-        $messages = Message::all();
-        $this->view('admin.messages', ['pageTitle' => '', 'messages' => $messages]);
+        $email = $_SESSION['mfa_pending_email'] ?? '';
+        if ($email === '') {
+            $this->redirect(base_url('login'));
+            return;
+        }
+        $this->view('auth.login-verify', [
+            'pageTitle' => 'Verify your login',
+            'navbar' => true,
+            'footer' => true,
+            'email' => $email,
+            'errors' => [],
+            'old' => [],
+        ]);
+    }
+
+    public function verifyLogin(Request $request): void
+    {
+        $email = $_SESSION['mfa_pending_email'] ?? '';
+        if ($email === '') {
+            $this->redirect(base_url('login'));
+            return;
+        }
+
+        $code = trim((string) $request->input('code'));
+        $errors = [];
+
+        if (strlen($code) !== 6 || !ctype_digit($code)) {
+            $errors['code'] = 'Please enter the 6-digit code sent to your email.';
+        }
+
+        if (!empty($errors)) {
+            $this->view('auth.login-verify', [
+                'pageTitle' => 'Verify your login',
+                'navbar' => true,
+                'footer' => true,
+                'email' => $email,
+                'errors' => $errors,
+                'old' => ['code' => $code],
+            ]);
+            return;
+        }
+
+        if (!LoginVerificationCode::verify($email, $code)) {
+            $errors['code'] = 'Invalid or expired code. Please try logging in again.';
+            $this->view('auth.login-verify', [
+                'pageTitle' => 'Verify your login',
+                'navbar' => true,
+                'footer' => true,
+                'email' => $email,
+                'errors' => $errors,
+                'old' => ['code' => $code],
+            ]);
+            return;
+        }
+
+        $user = User::findByEmail($email);
+        if (!$user) {
+            unset($_SESSION['mfa_pending_email']);
+            $this->redirect(base_url('login'));
+            return;
+        }
+
+        unset($_SESSION['mfa_pending_email']);
+        session_regenerate_id(true);
+        $_SESSION['user_id'] = (int) $user['id'];
+        $_SESSION['email'] = $user['email'];
+        $_SESSION['full_name'] = $user['full_name'];
+        $_SESSION['role'] = $user['role'];
+
+        $redirect = $user['role'] === 'admin' ? base_url('admin') : base_url();
+        $this->redirect($redirect);
+    }
+
+    public function showRegister(): void
+    {
+        $this->view('auth.register', ['pageTitle' => 'Register', 'navbar' => true, 'footer' => true]);
+    }
+
+    public function register(Request $request): void
+    {
+        $errors = [];
+        if (recaptcha_enabled()) {
+            $token = (string) $request->input('g-recaptcha-response');
+            $result = recaptcha_verify($token);
+            if (!$result['success']) {
+                $errors['recaptcha'] = 'Security check failed. Please try again.';
+                $this->view('auth.register', [
+                    'pageTitle' => 'Register',
+                    'navbar' => true,
+                    'footer' => true,
+                    'errors' => $errors,
+                    'old' => $request->all(),
+                ]);
+                return;
+            }
+        }
+
+        $email = trim((string) $request->input('email'));
+        $password = (string) $request->input('password');
+        $password_confirmation = (string) $request->input('password_confirmation');
+        $full_name = trim((string) $request->input('full_name'));
+        $company = trim((string) $request->input('company'));
+        $phone = trim((string) $request->input('phone'));
+
+        if ($full_name === '') {
+            $errors['full_name'] = 'Full name is required.';
+        }
+        if ($email === '') {
+            $errors['email'] = 'Email is required.';
+        } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $errors['email'] = 'Invalid email address.';
+        } elseif (User::findByEmail($email)) {
+            $errors['email'] = 'This email is already registered.';
+        }
+        if (strlen($password) < 8) {
+            $errors['password'] = 'Password must be at least 8 characters.';
+        }
+        if ($password !== $password_confirmation) {
+            $errors['password_confirmation'] = 'Passwords do not match.';
+        }
+
+        if (!empty($errors)) {
+            $this->view('auth.register', [
+                'pageTitle' => 'Register',
+                'navbar' => true,
+                'footer' => true,
+                'errors' => $errors,
+                'old' => [
+                    'email' => $email,
+                    'full_name' => $full_name,
+                    'company' => $company,
+                    'phone' => $phone,
+                ],
+            ]);
+            return;
+        }
+
+        User::create([
+            'email' => $email,
+            'password' => $password,
+            'full_name' => $full_name,
+            'company' => $company ?: null,
+            'phone' => $phone ?: null,
+            'role' => 'client',
+            'status' => 'lead',
+        ]);
+
+        $user = User::findByEmail($email);
+        session_regenerate_id(true);
+        $_SESSION['user_id'] = (int) $user['id'];
+        $_SESSION['email'] = $user['email'];
+        $_SESSION['full_name'] = $user['full_name'];
+        $_SESSION['role'] = $user['role'];
+
+        $this->redirect(base_url());
+    }
+
+    public function logout(): void
+    {
+        $_SESSION = [];
+        if (ini_get('session.use_cookies')) {
+            $p = session_get_cookie_params();
+            setcookie(session_name(), '', time() - 42000, $p['path'], $p['domain'], (bool) $p['secure'], (bool) $p['httponly']);
+        }
+        session_destroy();
+        $this->redirect(base_url('login'));
+    }
+
+    public function showForgotPassword(): void
+    {
+        $this->view('auth.forgot-password', ['pageTitle' => 'Forgot password', 'navbar' => true, 'footer' => true]);
+    }
+
+    public function sendResetCode(Request $request): void
+    {
+        $errors = [];
+        if (recaptcha_enabled()) {
+            $token = (string) $request->input('g-recaptcha-response');
+            $result = recaptcha_verify($token);
+            if (!$result['success']) {
+                $errors['recaptcha'] = 'Security check failed. Please try again.';
+                $this->view('auth.forgot-password', [
+                    'pageTitle' => 'Forgot password',
+                    'navbar' => true,
+                    'footer' => true,
+                    'errors' => $errors,
+                    'old' => ['email' => (string) $request->input('email')],
+                ]);
+                return;
+            }
+        }
+
+        $email = trim((string) $request->input('email'));
+        if ($email === '') {
+            $errors['email'] = 'Email is required.';
+        } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $errors['email'] = 'Invalid email address.';
+        }
+
+        if (!empty($errors)) {
+            $this->view('auth.forgot-password', [
+                'pageTitle' => 'Forgot password',
+                'navbar' => true,
+                'footer' => true,
+                'errors' => $errors,
+                'old' => ['email' => $email],
+            ]);
+            return;
+        }
+
+        $user = User::findByEmail($email);
+        if ($user) {
+            $code = PasswordResetCode::create($email, 15);
+            send_password_reset_email($email, $code);
+        }
+        // Always show same message for security (don't reveal if email exists)
+        $_SESSION['reset_email'] = $email;
+        $_SESSION['reset_code_sent'] = true;
+        $this->redirect(base_url('reset-password'));
+    }
+
+    public function showResetPassword(): void
+    {
+        $email = $_SESSION['reset_email'] ?? '';
+        if ($email === '') {
+            $this->redirect(base_url('forgot-password'));
+            return;
+        }
+        $codeSent = !empty($_SESSION['reset_code_sent']);
+        unset($_SESSION['reset_code_sent']);
+        $this->view('auth.reset-password', [
+            'pageTitle' => 'Reset password',
+            'navbar' => true,
+            'footer' => true,
+            'email' => $email,
+            'codeSent' => $codeSent,
+            'errors' => [],
+            'old' => [],
+        ]);
+    }
+
+    public function resetPassword(Request $request): void
+    {
+        $email = $_SESSION['reset_email'] ?? '';
+        if ($email === '') {
+            $this->redirect(base_url('forgot-password'));
+            return;
+        }
+
+        $errors = [];
+        if (recaptcha_enabled()) {
+            $token = (string) $request->input('g-recaptcha-response');
+            $result = recaptcha_verify($token);
+            if (!$result['success']) {
+                $errors['recaptcha'] = 'Security check failed. Please try again.';
+                $this->view('auth.reset-password', [
+                    'pageTitle' => 'Reset password',
+                    'navbar' => true,
+                    'footer' => true,
+                    'email' => $email,
+                    'errors' => $errors,
+                    'old' => ['code' => (string) $request->input('code')],
+                ]);
+                return;
+            }
+        }
+
+        $code = trim((string) $request->input('code'));
+        $password = (string) $request->input('password');
+        $password_confirmation = (string) $request->input('password_confirmation');
+        $errors = [];
+
+        if (strlen($code) !== 6 || !ctype_digit($code)) {
+            $errors['code'] = 'Please enter the 6-digit code sent to your email.';
+        }
+        if (strlen($password) < 8) {
+            $errors['password'] = 'Password must be at least 8 characters.';
+        }
+        if ($password !== $password_confirmation) {
+            $errors['password_confirmation'] = 'Passwords do not match.';
+        }
+
+        if (!empty($errors)) {
+            $this->view('auth.reset-password', [
+                'pageTitle' => 'Reset password',
+                'navbar' => true,
+                'footer' => true,
+                'email' => $email,
+                'errors' => $errors,
+                'old' => ['code' => $code],
+            ]);
+            return;
+        }
+
+        if (!PasswordResetCode::verify($email, $code)) {
+            $errors['code'] = 'Invalid or expired code. Please request a new one.';
+            $this->view('auth.reset-password', [
+                'pageTitle' => 'Reset password',
+                'navbar' => true,
+                'footer' => true,
+                'email' => $email,
+                'errors' => $errors,
+                'old' => ['code' => $code],
+            ]);
+            return;
+        }
+
+        $user = User::findByEmail($email);
+        if ($user) {
+            User::updatePassword((int) $user['id'], $password);
+        }
+        unset($_SESSION['reset_email']);
+        $this->redirect(base_url('login') . '?reset=1');
     }
 }
