@@ -53,7 +53,8 @@ jobs:
           username: ${{ secrets.PROD_USER }}
           key:      ${{ secrets.PROD_SSH_KEY }}
           script: |
-            git --work-tree=/var/www/html --git-dir=/var/repo/myapp checkout -f main
+            cd /var/www/html
+            git pull origin main
             chown -R www-data:www-data /var/www/html
             apachectl graceful
-            echo "✅ Deployed $(git --git-dir=/var/repo/myapp rev-parse --short HEAD)"
+            echo "✅ Deployed successfully"
