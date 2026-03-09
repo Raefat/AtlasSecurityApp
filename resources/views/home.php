@@ -18,7 +18,7 @@ $portfolio = $portfolio ?? [];
         <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 lg:py-28 w-full">
             <div class="grid lg:grid-cols-2 gap-12 items-center">
                 <div>
-                    <h1 class="text-4xl sm:text-5xl lg:text-6xl font-bold text-navy-800 leading-tight">Creative Web Development Company</h1>
+                    <h1 class="text-4xl sm:text-5xl lg:text-6xl font-bold text-red-700 leading-tight">Creative Web Development Company</h1>
                     <p class="mt-6 text-lg text-slate-600 max-w-xl leading-relaxed">We build modern, fast websites tailored to your business. From landing pages to full web applications—clean code, clear process, and on-time delivery.</p>
                     <a href="<?= base_url('portfolio') ?>" class="mt-10 inline-flex items-center gap-2 px-8 py-4 rounded-full font-semibold bg-gradient-to-r from-orange-400 via-rose-400 to-rose-500 text-white shadow-xl shadow-rose-500/30 hover:shadow-rose-500/40 transition">View Case Studies &gt;</a>
                 </div>
